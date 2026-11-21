@@ -1,0 +1,167 @@
+using Newtonsoft.Json.Linq;
+using SwarmUI.Utils;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text.RegularExpressions;
+
+namespace LLMPromptEnhancerExtension;
+
+/// <summary>Talks to an OpenAI-compatible chat API (LM Studio, Ollama's /v1, OpenRouter, others).</summary>
+public static class LLMClient
+{
+    /// <summary>Shared HTTP client; timeouts are per request.</summary>
+    public static readonly HttpClient Client = new() { Timeout = Timeout.InfiniteTimeSpan };
+
+    /// <summary>Removes reasoning blocks some local models put before the answer.</summary>
+    public static readonly Regex ThinkRegex = new(@"<(think|thinking|reasoning)>.*?</\1>", RegexOptions.Compiled | RegexOptions.Singleline | RegexOptions.IgnoreCase);
+
+    /// <summary>Builds a request with the provider's headers.</summary>
+    public static HttpRequestMessage MakeRequest(HttpMethod method, ProviderSettings ps, string path)
+    {
+        HttpRequestMessage request = new(method, $"{ps.URL.TrimEnd('/')}/{path}");
+        if (!string.IsNullOrEmpty(ps.APIKey))
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ps.APIKey);
+        }
+        // OpenRouter asks apps to name themselves (optional); generic, no user data.
+        request.Headers.TryAddWithoutValidation("X-Title", "SwarmUI LLM Prompt Enhancer");
+        return request;
+    }
+
+    /// <summary>Reads an error message out of a failed response.</summary>
+    public static string ErrorText(int status, string body)
+    {
+        string message = body ?? "";
+        try
+        {
+            JObject json = JObject.Parse(body);
+            JToken err = json["error"];
+            message = err is JObject eo ? (eo["message"]?.ToString() ?? eo.ToString()) : (err?.ToString() ?? body);
+        }
+        catch (Exception)
+        {
+        }
+        if (message.Length > 300)
+        {
+            message = message[..300] + "...";
+        }
+        return $"HTTP {status}: {message}";
+    }
+
+    /// <summary>Lists the model IDs the server offers.</summary>
+    public static async Task<List<string>> ListModels(ProviderSettings ps, int timeoutSeconds)
+    {
+        using CancellationTokenSource cts = new(TimeSpan.FromSeconds(Math.Min(timeoutSeconds, 30)));
+        using HttpRequestMessage request = MakeRequest(HttpMethod.Get, ps, "models");
+        using HttpResponseMessage response = await Client.SendAsync(request, cts.Token);
+        string body = await response.Content.ReadAsStringAsync(cts.Token);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(ErrorText((int)response.StatusCode, body));
+        }
+        JObject json = JObject.Parse(body);
+        List<string> models = [];
+        if (json["data"] is JArray data)
+        {
+            foreach (JToken m in data)
+            {
+                string id = m["id"]?.ToString();
+                if (!string.IsNullOrWhiteSpace(id))
+                {
+                    models.Add(id);
+                }
+            }
+        }
+        models.Sort(StringComparer.OrdinalIgnoreCase);
+        return models;
+    }
+
+    /// <summary>Sends one chat request and returns the cleaned answer text.</summary>
+    public static async Task<string> Complete(EnhancerSettings settings, string system, string user, double temperature, CancellationToken cancel)
+    {
+        ProviderSettings ps = settings.Current;
+        if (string.IsNullOrWhiteSpace(ps.Model))
+        {
+            throw new InvalidOperationException($"no model chosen for {EnhancerSettings.ProviderNames.GetValueOrDefault(settings.Provider, settings.Provider)} - set one on the 'LLM Prompt Enhancer' tab");
+        }
+        JObject payload = new()
+        {
+            ["model"] = ps.Model,
+            ["messages"] = new JArray()
+            {
+                new JObject() { ["role"] = "system", ["content"] = system },
+                new JObject() { ["role"] = "user", ["content"] = user }
+            },
+            ["temperature"] = temperature,
+            ["max_tokens"] = settings.MaxTokens,
+            ["stream"] = false
+        };
+        using CancellationTokenSource cts = CancellationTokenSource.CreateLinkedTokenSource(cancel);
+        cts.CancelAfter(TimeSpan.FromSeconds(settings.TimeoutSeconds));
+        using HttpRequestMessage request = MakeRequest(HttpMethod.Post, ps, "chat/completions");
+        request.Content = new StringContent(payload.ToString(Newtonsoft.Json.Formatting.None), Encoding.UTF8, "application/json");
+        HttpResponseMessage response;
+        try
+        {
+            response = await Client.SendAsync(request, cts.Token);
+        }
+        catch (OperationCanceledException) when (!cancel.IsCancellationRequested)
+        {
+            throw new InvalidOperationException($"no answer from {ps.URL} within {settings.TimeoutSeconds} seconds");
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new InvalidOperationException($"cannot reach {ps.URL} ({ex.Message})");
+        }
+        using (response)
+        {
+            string body = await response.Content.ReadAsStringAsync(cts.Token);
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(ErrorText((int)response.StatusCode, body));
+            }
+            JObject json = JObject.Parse(body);
+            if (json["error"] is not null && json["choices"] is null)
+            {
+                throw new InvalidOperationException(ErrorText(200, body));
+            }
+            string content = json["choices"]?[0]?["message"]?["content"]?.ToString() ?? "";
+            string cleaned = Clean(content);
+            if (cleaned.Length == 0)
+            {
+                string reason = json["choices"]?[0]?["finish_reason"]?.ToString();
+                throw new InvalidOperationException(reason == "length"
+                    ? $"the model used up all {settings.MaxTokens} tokens without an answer (a thinking model? raise 'Max answer length')"
+                    : "the model gave an empty answer");
+            }
+            return cleaned;
+        }
+    }
+
+    /// <summary>Strips reasoning blocks, code fences, quotes and "Here is ..." intros from an answer.</summary>
+    public static string Clean(string content)
+    {
+        string text = ThinkRegex.Replace(content ?? "", "");
+        // An unclosed think block (cut off answer) - take what comes after a closing tag, if any.
+        int closeThink = text.LastIndexOf("</think>", StringComparison.OrdinalIgnoreCase);
+        if (closeThink >= 0)
+        {
+            text = text[(closeThink + "</think>".Length)..];
+        }
+        else if (text.TrimStart().StartsWith("<think>", StringComparison.OrdinalIgnoreCase))
+        {
+            return "";
+        }
+        text = text.Trim();
+        text = Regex.Replace(text, @"^```[a-zA-Z]*\s*", "");
+        text = Regex.Replace(text, @"\s*```$", "");
+        text = Regex.Replace(text, @"^(here(?:'s| is)[^:\n]*|(?:enhanced|improved|rewritten|final)?\s*prompt)\s*:\s*", "", RegexOptions.IgnoreCase).Trim();
+        if (text.Length > 1 && ((text[0] == '"' && text[^1] == '"') || (text[0] == '“' && text[^1] == '”') || (text[0] == '\'' && text[^1] == '\'')))
+        {
+            text = text[1..^1].Trim();
+        }
+        // Prompts are one paragraph; models sometimes add blank lines.
+        text = Regex.Replace(text, @"\s*\n\s*\n\s*", " ");
+        return text.Trim();
+    }
+}

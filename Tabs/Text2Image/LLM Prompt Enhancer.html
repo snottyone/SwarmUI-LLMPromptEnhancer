@@ -1,0 +1,73 @@
+<div class="llmpe-settings">
+    <h3>LLM Prompt Enhancer</h3>
+    <p class="llmpe-intro">
+        The <b>&#x2728;</b> button next to the prompt box rewrites your prompt with the model chosen here.
+        For automatic enhancement while generating, switch on the <b>LLM Prompt Enhancer</b> parameter group.
+        Wildcards (<code>&lt;wildcard:name&gt;</code>, <code>&lt;random:a|b&gt;</code>, <code>__name__</code>, <code>{a|b}</code>), LoRAs and other prompt syntax are kept as they are.
+    </p>
+    <div id="llmpe_readonly_note" class="llmpe-note" style="display:none">You can use the enhancer, but only an admin can change these settings.</div>
+    <div class="llmpe-row">
+        <label for="llmpe_provider">Provider</label>
+        <select id="llmpe_provider" class="auto-dropdown"></select>
+    </div>
+    <div class="llmpe-row">
+        <label for="llmpe_url">Server URL</label>
+        <input type="text" id="llmpe_url" class="auto-text" spellcheck="false" autocomplete="off">
+        <button class="basic-button" id="llmpe_url_default" title="Put the provider's usual address back">Default</button>
+    </div>
+    <div class="llmpe-row" id="llmpe_key_row">
+        <label for="llmpe_key">API key</label>
+        <input type="password" id="llmpe_key" class="auto-text" spellcheck="false" autocomplete="new-password">
+        <button class="basic-button" id="llmpe_key_clear" title="Remove the stored key">Remove</button>
+        <span id="llmpe_key_state" class="llmpe-hint"></span>
+    </div>
+    <div class="llmpe-row">
+        <label for="llmpe_model">Model</label>
+        <input type="text" id="llmpe_model" class="auto-text" list="llmpe_model_list" spellcheck="false" autocomplete="off" placeholder="model ID">
+        <datalist id="llmpe_model_list"></datalist>
+        <button class="basic-button" id="llmpe_load_models" title="Ask the server which models it has">Load models</button>
+        <span id="llmpe_models_state" class="llmpe-hint"></span>
+    </div>
+    <div class="llmpe-row llmpe-row-top">
+        <label for="llmpe_system">Instruction</label>
+        <textarea id="llmpe_system" class="auto-text-block" rows="5"></textarea>
+        <button class="basic-button" id="llmpe_system_default" title="Put the built-in instruction back">Default</button>
+    </div>
+    <div class="llmpe-row">
+        <label for="llmpe_max_tokens">Max answer length</label>
+        <input type="number" id="llmpe_max_tokens" class="auto-text llmpe-num" min="16" max="32000" step="1">
+        <span class="llmpe-hint">tokens (thinking models need more)</span>
+    </div>
+    <div class="llmpe-row">
+        <label for="llmpe_timeout">Timeout</label>
+        <input type="number" id="llmpe_timeout" class="auto-text llmpe-num" min="5" max="3600" step="1">
+        <span class="llmpe-hint">seconds</span>
+    </div>
+    <div class="llmpe-row">
+        <label for="llmpe_on_error">If the LLM fails while generating</label>
+        <select id="llmpe_on_error" class="auto-dropdown">
+            <option value="stop">Stop with the error</option>
+            <option value="original">Generate with the unchanged prompt</option>
+        </select>
+    </div>
+    <div class="llmpe-row">
+        <label for="llmpe_wc_examples">Show wildcard examples to the model</label>
+        <input type="checkbox" id="llmpe_wc_examples">
+        <span class="llmpe-hint">a few lines of each wildcard file, so the model knows what a placeholder stands for</span>
+    </div>
+    <div class="llmpe-row">
+        <label></label>
+        <button class="basic-button llmpe-save" id="llmpe_save">Save</button>
+        <span id="llmpe_save_state" class="llmpe-hint"></span>
+    </div>
+    <h4>Try it</h4>
+    <div class="llmpe-row llmpe-row-top">
+        <label for="llmpe_test_in">Prompt</label>
+        <textarea id="llmpe_test_in" class="auto-text-block" rows="2" placeholder="a cat in a &lt;wildcard:hats&gt; on a rooftop"></textarea>
+        <button class="basic-button" id="llmpe_test_run">Enhance</button>
+    </div>
+    <div class="llmpe-row llmpe-row-top">
+        <label>Result</label>
+        <div id="llmpe_test_out" class="llmpe-test-out"></div>
+    </div>
+</div>

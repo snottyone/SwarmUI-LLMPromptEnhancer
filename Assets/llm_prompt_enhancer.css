@@ -1,0 +1,92 @@
+.llmpe-button-wrapper {
+    position: relative;
+    width: 0;
+    height: 0;
+}
+.llmpe-button {
+    position: absolute;
+    top: 34px;
+    left: -5px;
+    width: 29px;
+    height: 29px;
+    font-size: 15px;
+    line-height: 29px;
+    padding: 0 !important;
+    text-align: center;
+    border-radius: 1rem !important;
+    cursor: pointer;
+    user-select: none;
+}
+.llmpe-button.llmpe-busy {
+    cursor: wait;
+    opacity: 0.6;
+    animation: llmpe-pulse 1s ease-in-out infinite;
+}
+.llmpe-button.llmpe-failed {
+    outline: 2px solid var(--emphasis, #c33);
+}
+@keyframes llmpe-pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+}
+.small-window .llmpe-button-wrapper {
+    width: auto;
+    height: auto;
+    display: flex;
+    align-items: center;
+}
+.small-window .llmpe-button {
+    position: static;
+    width: 2.75rem;
+    height: 2.75rem;
+    line-height: 2.75rem;
+    font-size: 1.2rem;
+}
+.llmpe-settings {
+    padding: 1rem;
+    max-width: 60rem;
+    overflow-y: auto;
+    height: 100%;
+}
+.llmpe-intro, .llmpe-note {
+    max-width: 50rem;
+}
+.llmpe-note {
+    font-weight: bold;
+}
+.llmpe-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.6rem;
+}
+.llmpe-row-top {
+    align-items: flex-start;
+}
+.llmpe-row > label {
+    flex: 0 0 15rem;
+    max-width: 100%;
+}
+.llmpe-row > input.auto-text, .llmpe-row > select.auto-dropdown {
+    flex: 1 1 18rem;
+    max-width: 30rem;
+}
+.llmpe-row > input.llmpe-num {
+    flex: 0 0 7rem;
+}
+.llmpe-row > textarea {
+    flex: 1 1 25rem;
+    max-width: 40rem;
+}
+.llmpe-hint {
+    opacity: 0.75;
+    font-size: 0.9em;
+}
+.llmpe-test-out {
+    flex: 1 1 25rem;
+    max-width: 40rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+    min-height: 2rem;
+}
