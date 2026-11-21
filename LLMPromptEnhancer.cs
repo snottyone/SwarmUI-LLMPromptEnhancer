@@ -44,8 +44,8 @@ public class LLMPromptEnhancer : Extension
         PermSettings = Permissions.Register(new("llm_prompt_enhancer_settings", "Edit LLM Prompt Enhancer Settings", "Allows changing which LLM server, model and API key the enhancer uses. The server will connect to whatever URL is entered.", PermissionDefault.ADMINS, PermGroup, PermSafetyLevel.RISKY));
         EnhanceGroup = new("LLM Prompt Enhancer", Toggles: true, Open: false, Description: "Has a language model rewrite the prompt before generating. Server, model and instruction are set on the 'LLM Prompt Enhancer' tab.");
         EnhanceMode = T2IParamTypes.Register<string>(new("LLM Enhance Mode",
-            "'Once per Generate': the prompt is enhanced once, with wildcards and other tags kept in place, so every image still gets its own wildcard picks.\n'Every image': each image's prompt is enhanced after its wildcards are filled in - one LLM call per image, the model sees the actual picks.",
-            "once", GetValues: _ => ["once///Once per Generate (wildcards still vary)", "each///Every image (after wildcards are filled in)"], Group: EnhanceGroup, OrderPriority: 1));
+            "'Every image': each image's prompt is enhanced after its wildcards are filled in - one LLM call per image, the model sees the actual picks and writes around them.\n'Once per Generate': the prompt is enhanced once, with wildcards and other tags kept in place, so every image still gets its own picks - but the model doesn't know them and leaves those parts alone.\nThe prompt box is never changed.",
+            "each", GetValues: _ => ["each///Every image (after wildcards are filled in)", "once///Once per Generate (wildcards still vary)"], Group: EnhanceGroup, OrderPriority: 1));
         EnhanceCreativity = T2IParamTypes.Register<double>(new("LLM Enhance Creativity",
             "The model's temperature: low keeps close to your words, high invents more.",
             "0.7", Min: 0, Max: 2, Step: 0.05, Group: EnhanceGroup, OrderPriority: 2));
@@ -105,7 +105,7 @@ public class LLMPromptEnhancer : Extension
     /// <summary>Late parameter handler, runs before SwarmUI fills in wildcards: 'once per Generate' mode.</summary>
     public static void EnhanceBeforeWildcards(T2IParamInput input)
     {
-        if (!input.TryGet(EnhanceCreativity, out double temperature) || input.Get(EnhanceMode, "once") != "once")
+        if (!input.TryGet(EnhanceCreativity, out double temperature) || input.Get(EnhanceMode, "each") != "once")
         {
             return;
         }
@@ -148,7 +148,7 @@ public class LLMPromptEnhancer : Extension
     /// <summary>Late parameter handler, runs after SwarmUI filled in wildcards: 'every image' mode.</summary>
     public static void EnhanceAfterWildcards(T2IParamInput input)
     {
-        if (!input.TryGet(EnhanceCreativity, out double temperature) || input.Get(EnhanceMode, "once") != "each")
+        if (!input.TryGet(EnhanceCreativity, out double temperature) || input.Get(EnhanceMode, "each") != "each")
         {
             return;
         }

@@ -126,7 +126,11 @@ public class ProtectedPrompt
         StringBuilder sb = new();
         sb.Append("\n\nThe prompt contains placeholders like [[T1]]. Each one is replaced later by the value given below (a random pick, or technical syntax). ");
         sb.Append("Copy every placeholder into your answer exactly as written (double square brackets), each exactly once, where it fits in the sentence. ");
-        sb.Append("Write the words around a placeholder so they work for any of its values, and do not describe or repeat its value yourself.\nPlaceholders:");
+        sb.Append("You do NOT know which value a random placeholder will get - the examples are very different from each other and any of them can be picked. ");
+        sb.Append("A random placeholder fully decides its part of the picture: write nothing at all about that part yourself, and nothing that assumes one of its values. ");
+        sb.Append("For example, if a placeholder is a location or setting, write no setting details anywhere (no room, walls, furniture, objects around, landscape, sky, weather, time of day, indoor or outdoor); ");
+        sb.Append("if it is clothing, write no clothing details; if it is a person or a pose, write no details of that. ");
+        sb.Append("Enrich only the parts the user wrote out in words, and keep each placeholder as a self-contained phrase.\nPlaceholders:");
         for (int i = 0; i < Tokens.Count; i++)
         {
             sb.Append($"\n[[T{i + 1}]] = {Hints[i]}");
@@ -284,7 +288,7 @@ public class ProtectedPrompt
             string examples = WildcardExampleSource?.Invoke(name);
             if (!string.IsNullOrWhiteSpace(examples))
             {
-                hint += $" (for example: {examples})";
+                hint += $" ({examples})";
             }
         }
         return hint;
@@ -306,8 +310,27 @@ public class ProtectedPrompt
             {
                 return null;
             }
-            IEnumerable<string> picks = wildcard.Options.Select(o => o.Trim()).Where(o => o.Length > 0 && o.Length < 80);
-            return string.Join(" / ", picks.Take(5));
+            // Spread over the whole file: files are often sorted in blocks (all indoor first, then outdoor ...),
+            // and the first lines alone made the model assume the first block's kind (owner: 'The room, <wildcard:Locations/All-In-Out>').
+            List<string> usable = [.. wildcard.Options.Select(o => o.Trim()).Where(o => o.Length > 0 && o.Length < 120)];
+            if (usable.Count == 0)
+            {
+                return null;
+            }
+            const int maxExamples = 6;
+            List<string> picks = [];
+            if (usable.Count <= maxExamples)
+            {
+                picks = usable;
+            }
+            else
+            {
+                for (int i = 0; i < maxExamples; i++)
+                {
+                    picks.Add(usable[(int)((long)i * (usable.Count - 1) / (maxExamples - 1))]);
+                }
+            }
+            return $"{usable.Count} different values, eg {string.Join(" / ", picks.Distinct())}";
         }
         catch (Exception)
         {

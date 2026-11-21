@@ -20,13 +20,13 @@ The URL is resolved **on the machine running SwarmUI**, not in your browser. If 
 
 ## Use
 
-- **✨ button** under the **+** next to the prompt box: rewrites the prompt in the box so you can read and edit it before generating. **Shift+click** puts the previous prompt back.
-- **LLM Prompt Enhancer** parameter group (switch it on, like any group): enhances the prompt automatically while generating.
+- **LLM Prompt Enhancer** parameter group (switch it on, like any group): enhances the prompt automatically while generating. **Your prompt box is never changed**; only the prompt sent for each image is.
   - **Mode**:
-    - *Once per Generate*: one LLM call per click. Wildcards stay in place, so every image still gets its own picks.
-    - *Every image*: one LLM call per image, after the wildcards are filled in, so the model sees the actual picks. This is slower.
+    - *Every image* (default): for each image, SwarmUI fills in the wildcards first, then the model rewrites that finished prompt. The model sees the actual picks (say, the location) and writes around them, so nothing clashes. This is one LLM call per image.
+    - *Once per Generate*: one LLM call per click. Wildcards stay in place, so every image still gets its own picks. The model doesn't know those picks, so it is told to write nothing about the parts a wildcard decides.
   - **Creativity**: the model's temperature.
   - **Instruction**: an optional extra wish for this generation, such as "moody film still". The ✨ button uses these values too.
+- **✨ button** under the **+** next to the prompt box: rewrites the prompt in the box so you can read and edit it before generating. Like *Once per Generate*, it can't know the wildcard picks and leaves those parts alone. **Shift+click** puts the previous prompt back.
 - The image metadata keeps your original prompt (`original_prompt`) next to the enhanced one.
 
 ## How wildcards and syntax are kept
@@ -35,7 +35,7 @@ Before the prompt goes to the model, every piece of syntax is replaced by a plac
 - `<wildcard:name>` / `<wc:...>`, `<random:a|b>`, `<lora:...>`, `<embed:...>`, `<preset:...>`, `<var:...>` and other `<...>` tags, nested ones included
 - Dynamic-Prompts style `__name__` and `{a|b}`
 
-The model is told what each placeholder stands for. For a wildcard, it gets a few lines from that wildcard file (in SwarmUI's wildcards folder). This can be switched off in the settings. The model's answer gets the original syntax back. A placeholder the model dropped is appended at the end, and a doubled one is removed.
+The model is told what each placeholder stands for. For a wildcard, it gets the number of values and six examples spread over the whole file (in SwarmUI's wildcards folder), so a file sorted in blocks (indoor first, then outdoor) doesn't make it assume one kind. The examples can be switched off in the settings. The model is told it doesn't know which value will be picked, and must write nothing about what a wildcard decides. For a location wildcard, that means no room, walls, sky or weather. The model's answer gets the original syntax back. A placeholder the model dropped is appended at the end, and a doubled one is removed.
 
 Text from the first section tag on (`<segment:...>`, `<region:...>`, `<object:...>`, `<extend:...>`, `<base>`, `<refiner>`, `<video>`, ...) is not sent to the model and stays exactly as written.
 
