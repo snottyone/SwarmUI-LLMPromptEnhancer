@@ -108,6 +108,9 @@ public class ProtectedPrompt
     /// <summary>Whether the main section has words to rewrite (not only tags and punctuation).</summary>
     public bool HasProse => Regex.IsMatch(PlaceholderRegex.Replace(Text, " "), @"\p{L}");
 
+    /// <summary>Whether a placeholder stands for a random pick (wildcard, random, {a|b}) - not only technical tags.</summary>
+    public bool HasRandomPick => Hints.Any(h => h.StartsWith("a random pick") || h.StartsWith("one random pick") || h.StartsWith("one of:"));
+
     /// <summary>Adds a placeholder and returns its text.</summary>
     public string Add(string original, string hint)
     {
@@ -124,13 +127,18 @@ public class ProtectedPrompt
             return "";
         }
         StringBuilder sb = new();
-        sb.Append("\n\nThe prompt contains placeholders like [[T1]]. Each one is replaced later by the value given below (a random pick, or technical syntax). ");
+        sb.Append("\n\nThe prompt contains placeholders like [[T1]]. Each one is replaced later by the value given below. ");
         sb.Append("Copy every placeholder into your answer exactly as written (double square brackets), each exactly once, where it fits in the sentence. ");
-        sb.Append("You do NOT know which value a random placeholder will get - the examples are very different from each other and any of them can be picked. ");
-        sb.Append("A random placeholder fully decides its part of the picture: write nothing at all about that part yourself, and nothing that assumes one of its values. ");
-        sb.Append("For example, if a placeholder is a location or setting, write no setting details anywhere (no room, walls, furniture, objects around, landscape, sky, weather, time of day, indoor or outdoor); ");
-        sb.Append("if it is clothing, write no clothing details; if it is a person or a pose, write no details of that. ");
-        sb.Append("Enrich only the parts the user wrote out in words, and keep each placeholder as a self-contained phrase.\nPlaceholders:");
+        if (HasRandomPick)
+        {
+            // Only for real random picks (wildcards, <random>, {a|b}) - a LoRA or other technical tag must not make the model hold back.
+            sb.Append("You do NOT know which value a random placeholder will get - the examples are very different from each other and any of them can be picked. ");
+            sb.Append("A random placeholder fully decides its part of the picture: write nothing at all about that part yourself, and nothing that assumes one of its values. ");
+            sb.Append("For example, if a placeholder is a location or setting, write no setting details anywhere (no room, walls, furniture, objects around, landscape, sky, weather, time of day, indoor or outdoor); ");
+            sb.Append("if it is clothing, write no clothing details; if it is a person or a pose, write no details of that. ");
+            sb.Append("Enrich only the parts the user wrote out in words, and keep each placeholder as a self-contained phrase. ");
+        }
+        sb.Append("\nPlaceholders:");
         for (int i = 0; i < Tokens.Count; i++)
         {
             sb.Append($"\n[[T{i + 1}]] = {Hints[i]}");
