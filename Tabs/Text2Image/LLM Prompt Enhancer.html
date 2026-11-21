@@ -23,10 +23,13 @@
     </div>
     <div class="llmpe-row">
         <label for="llmpe_model">Model</label>
-        <input type="text" id="llmpe_model" class="auto-text" list="llmpe_model_list" spellcheck="false" autocomplete="off" placeholder="model ID">
-        <datalist id="llmpe_model_list"></datalist>
+        <input type="text" id="llmpe_model" class="auto-text" spellcheck="false" autocomplete="off" placeholder="model ID - type it, or Load models and pick">
         <button class="basic-button" id="llmpe_load_models" title="Ask the server which models it has">Load models</button>
         <span id="llmpe_models_state" class="llmpe-hint"></span>
+    </div>
+    <div class="llmpe-row" id="llmpe_model_pick_row" style="display:none">
+        <label for="llmpe_model_pick">Models on the server</label>
+        <select id="llmpe_model_pick" class="auto-dropdown"></select>
     </div>
     <div class="llmpe-row llmpe-row-top">
         <label for="llmpe_system">Instruction</label>

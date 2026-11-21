@@ -163,7 +163,8 @@ class LLMPromptEnhancerUI {
         getRequiredElementById('llmpe_key').value = '';
         getRequiredElementById('llmpe_key').placeholder = p.has_key ? '(a key is stored - type to replace it)' : (this.shownProvider == 'openrouter' ? 'required for OpenRouter' : 'usually not needed');
         getRequiredElementById('llmpe_key_state').textContent = p.has_key ? 'key stored' : '';
-        getRequiredElementById('llmpe_model_list').innerHTML = '';
+        getRequiredElementById('llmpe_model_pick').innerHTML = '';
+        getRequiredElementById('llmpe_model_pick_row').style.display = 'none';
         getRequiredElementById('llmpe_models_state').textContent = '';
     }
 
@@ -187,17 +188,26 @@ class LLMPromptEnhancerUI {
             url: getRequiredElementById('llmpe_url').value.trim(),
             api_key: getRequiredElementById('llmpe_key').value.trim()
         }, data => {
-            let list = getRequiredElementById('llmpe_model_list');
-            list.innerHTML = '';
+            let pick = getRequiredElementById('llmpe_model_pick');
+            let modelBox = getRequiredElementById('llmpe_model');
+            let current = modelBox.value.trim();
+            pick.innerHTML = '';
+            let first = document.createElement('option');
+            first.value = '';
+            first.textContent = current == '' || data.models.includes(current) ? '(choose a model)' : `(keep '${current}' - not on the server)`;
+            pick.appendChild(first);
             for (let model of data.models) {
                 let option = document.createElement('option');
                 option.value = model;
-                list.appendChild(option);
+                option.textContent = model;
+                pick.appendChild(option);
             }
-            state.textContent = data.models.length == 0 ? 'the server has no models loaded' : `${data.models.length} models - click the Model box to pick one`;
-            let modelBox = getRequiredElementById('llmpe_model');
-            if (modelBox.value.trim() == '' && data.models.length == 1) {
+            pick.value = data.models.includes(current) ? current : '';
+            getRequiredElementById('llmpe_model_pick_row').style.display = data.models.length == 0 ? 'none' : '';
+            state.textContent = data.models.length == 0 ? 'the server has no models loaded' : `${data.models.length} models - pick one below, then Save`;
+            if (current == '' && data.models.length == 1) {
                 modelBox.value = data.models[0];
+                pick.value = data.models[0];
             }
         }, 0, e => {
             state.textContent = e;
@@ -281,6 +291,12 @@ class LLMPromptEnhancerUI {
             getRequiredElementById('llmpe_system').value = this.settings.default_system_prompt;
         });
         getRequiredElementById('llmpe_load_models').addEventListener('click', () => this.loadModels());
+        getRequiredElementById('llmpe_model_pick').addEventListener('change', () => {
+            let picked = getRequiredElementById('llmpe_model_pick').value;
+            if (picked != '') {
+                getRequiredElementById('llmpe_model').value = picked;
+            }
+        });
         getRequiredElementById('llmpe_save').addEventListener('click', () => this.save());
         getRequiredElementById('llmpe_key_clear').addEventListener('click', () => this.clearKey());
         getRequiredElementById('llmpe_test_run').addEventListener('click', () => this.test());
