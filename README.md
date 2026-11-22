@@ -7,7 +7,7 @@ This extension uses a language model to rewrite your prompt into a richer one. I
 - It only edits your prompt if you want it to (✨ button, reversible)
 
 Background: I wasn't happy with existing enhancers, which do not understand SwarmUI's prompt syntax (especially wildcards) and directly edit the prompt, so: this.\
-I use a lot of wildcard prompts and then do multiple gens, the prompt rewrite takes ~1s per gen here.\
+I use a lot of wildcard prompts and then do multiple gens, the prompt rewrite takes ~1s per gen here.
 
 YMMV (greatly), because I generate on a PC with a faster card, and have the LLM loaded on a PC with a slower card.\
 I use the [Dolphin Mistral Venice Edition](https://huggingface.co/dphn/Dolphin-Mistral-24B-Venice-Edition), which does any kind of prompt including NSFW ones.
@@ -16,15 +16,10 @@ Be aware that running both SwarmUI and an LLM on one card can get dicey. Offload
 
 And yes, it's written by Claude, i couldn't have. I've been testing/using it and am quite happy with the LLM rewrites and the resulting images, so maybe someone else finds it useful, too.
 
-## Install by hand:
+## Install by hand
 
 1. In `SwarmUI/src/Extensions/`, run `git clone https://github.com/snottyone/SwarmUI-LLMPromptEnhancer`.\
-SwarmUI's ## Install
-
-1. In `SwarmUI/src/Extensions/`, run `git clone https://github.com/snottyone/SwarmUI-LLMPromptEnhancer` - with `git clone`
-2. Restart SwarmUI with its normal launcher. It compiles the extension on start.
-3. Open the **LLM Prompt Enhancer** tab, pick the provider, check the URL, click **Load models**, pick a model and click **Save**.
-   Use **Try it** to check the answer. check updates the extension.
+   SwarmUI's update check can then update the extension.
 2. Restart SwarmUI with its normal launcher. It compiles the extension on start.
 3. Open the **LLM Prompt Enhancer** tab, pick the provider, check the URL, click **Load models**, pick a model and click **Save**.
    Use **Try it** to check the answer.
