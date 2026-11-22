@@ -4,7 +4,9 @@ Has a language model rewrite your prompt into a richer one. It works with **LM S
 
 ## Install
 
-1. Copy (or `git clone`) this folder into `SwarmUI/src/Extensions/` (for example `SwarmUI/src/Extensions/SwarmUI-LLMPromptEnhancer/`).
+1. In `SwarmUI/src/Extensions/`, run `git clone https://github.com/snottyone/SwarmUI-LLMPromptEnhancer`
+   (or download the ZIP from GitHub and unpack it there as its own folder). With `git clone`, SwarmUI's
+   update check can update the extension later.
 2. Restart SwarmUI with its normal launcher. It compiles the extension on start.
 3. Open the **LLM Prompt Enhancer** tab, pick the provider, check the URL, click **Load models**, pick a model and click **Save**.
    Use **Try it** to check the answer.
@@ -13,8 +15,10 @@ Has a language model rewrite your prompt into a richer one. It works with **LM S
 |---|---|---|
 | LM Studio | `http://localhost:1234/v1` | Start LM Studio's local server and load a model. |
 | Ollama | `http://localhost:11434/v1` | Uses Ollama's OpenAI-compatible endpoint. Pull a model first. |
-| OpenRouter | `https://openrouter.ai/api/v1` | Needs an API key. **Paid models cost money per request.** |
-| Other | your URL | Any `/v1/chat/completions` server (vLLM, llama.cpp server, text-generation-webui ...). |
+| OpenRouter | `https://openrouter.ai/api/v1` | Cloud models from many makers (GPT, Claude, Gemini, Llama, DeepSeek ...) with one API key. **Paid models cost money per request**; models ending in `:free` don't. |
+| Other | your URL | Any `/v1/chat/completions` server: local ones (vLLM, llama.cpp server, text-generation-webui ...) or a cloud provider's own OpenAI-compatible API with its key, such as `https://api.openai.com/v1`. |
+
+With a cloud model, your prompts are sent to that provider. In *Every image* mode that is one request per image.
 
 The URL is resolved **on the machine running SwarmUI**, not in your browser. If the LLM runs on a different machine, use that machine's address.
 
