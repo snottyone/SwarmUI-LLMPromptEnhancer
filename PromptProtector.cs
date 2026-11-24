@@ -146,8 +146,112 @@ public class ProtectedPrompt
         return sb.ToString();
     }
 
-    /// <summary>Puts the original tags back into the model's answer. Placeholders the model dropped are appended, duplicates removed.</summary>
-    public string Restore(string answer)
+    /// <summary>Whether placeholder 'index' (0-based) stands for a random pick.</summary>
+    public bool IsRandomPick(int index) => Hints[index].StartsWith("a random pick") || Hints[index].StartsWith("one random pick") || Hints[index].StartsWith("one of:");
+
+    /// <summary>The 0-based indexes of the placeholders the answer doesn't contain.</summary>
+    public List<int> Missing(string answer)
+    {
+        HashSet<int> found = [];
+        foreach (Match m in PlaceholderRegex.Matches(answer ?? ""))
+        {
+            found.Add(int.Parse(m.Groups[1].Value) - 1);
+        }
+        return [.. Enumerable.Range(0, Tokens.Count).Where(i => !found.Contains(i))];
+    }
+
+    /// <summary>Capitalised words that are not names.</summary>
+    public static readonly HashSet<string> NotNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "a", "an", "the", "she", "he", "her", "his", "they", "their", "it", "its", "this", "that", "these", "those", "and", "or", "but", "with",
+        "in", "on", "at", "of", "to", "from", "by", "for", "is", "are", "was", "while", "where", "who", "one", "two", "both", "each", "her", "him",
+        "i", "my", "we", "our", "you", "your", "there", "here", "then", "as", "into", "onto", "over", "under", "behind", "next", "photo", "image"
+    };
+
+    /// <summary>Words the dropped placeholder 'index' belongs to, best first: the name right before it in the user's prompt
+    /// ("Carla is a nude [[T1]]" - Carla), then the wildcard's own name ("&lt;wildcard:Betty&gt;" - Betty).</summary>
+    public List<string> AnchorsFor(int index)
+    {
+        List<string> anchors = [];
+        string ph = $"[[T{index + 1}]]";
+        int pos = Text.IndexOf(ph, StringComparison.Ordinal);
+        if (pos > 0)
+        {
+            string before = Text[..pos];
+            int clauseStart = before.LastIndexOfAny(['.', ',', ';', ':', '!', '?', '\n']) + 1;
+            string clause = PlaceholderRegex.Replace(before[clauseStart..], " ");
+            foreach (Match w in Regex.Matches(clause, @"\b\p{Lu}[\p{L}\-]+").Reverse())
+            {
+                if (!NotNames.Contains(w.Value))
+                {
+                    anchors.Add(w.Value);
+                    break;
+                }
+            }
+        }
+        string tag = Tokens[index];
+        string name = tag.StartsWith('<') ? TagData(tag) : tag.Trim('_');
+        name = name.Split('/', '\\').Last().Trim();
+        if (Regex.IsMatch(name, @"^\p{L}[\p{L}\-]{2,}$") && !anchors.Contains(name, StringComparer.OrdinalIgnoreCase))
+        {
+            anchors.Add(name);
+        }
+        return anchors;
+    }
+
+    /// <summary>Whether dropped placeholder 'index' is a random pick that Restore can put right after its name in 'answer'.</summary>
+    public bool CanAnchor(string answer, int index)
+    {
+        string probe = PlaceholderRegex.Replace(answer ?? "", " ");
+        return IsRandomPick(index) && InsertAtAnchor(ref probe, Tokens[index], AnchorsFor(index), out _);
+    }
+
+    /// <summary>Puts a dropped random pick right after the first mention of one of its anchor words; false if none is in the text.</summary>
+    public static bool InsertAtAnchor(ref string text, string token, List<string> anchors, out string usedAnchor)
+    {
+        foreach (string anchor in anchors)
+        {
+            Match possessive = null;
+            foreach (Match m in Regex.Matches(text, $@"\b{Regex.Escape(anchor)}\b", RegexOptions.IgnoreCase))
+            {
+                int lt = text.LastIndexOf('<', m.Index), gt = text.LastIndexOf('>', m.Index);
+                if (lt > gt)
+                {
+                    continue; // inside a tag
+                }
+                int after = m.Index + m.Length;
+                if (Regex.IsMatch(text[after..], @"^['’]s\b"))
+                {
+                    possessive ??= m;
+                    continue;
+                }
+                string rest = text[after..];
+                text = Regex.IsMatch(rest, @"^\s*[,.;:!?]") || rest.Trim().Length == 0
+                    ? $"{text[..after]}, {token}{rest}"
+                    : $"{text[..after]}, {token},{rest}";
+                usedAnchor = anchor;
+                return true;
+            }
+            if (possessive is not null)
+            {
+                // Only "Betty's ..." - put it at the end of that sentence.
+                int end = text.IndexOfAny(['.', '!', '?', '\n'], possessive.Index);
+                end = end < 0 ? text.Length : end;
+                text = $"{text[..end].TrimEnd(',', ' ')}, {token}{text[end..]}";
+                usedAnchor = anchor;
+                return true;
+            }
+        }
+        usedAnchor = null;
+        return false;
+    }
+
+    /// <summary>Puts the original tags back into the model's answer, duplicates removed. A dropped random pick (wildcard, random, {a|b})
+    /// goes right after the name it belongs to, else to the front; other dropped tags (LoRAs, embeddings ...) are appended.</summary>
+    public string Restore(string answer) => Restore(answer, null);
+
+    /// <summary>Like Restore(answer); 'notes' gets a line per placeholder that had to be put back by the enhancer.</summary>
+    public string Restore(string answer, List<string> notes)
     {
         HashSet<int> used = [];
         string restored = PlaceholderRegex.Replace(answer ?? "", m =>
@@ -161,12 +265,32 @@ public class ProtectedPrompt
         });
         restored = Regex.Replace(restored, @"[ \t]{2,}", " ").Replace(" ,", ",");
         restored = Regex.Replace(restored, @",(\s*,)+", ",").Trim().Trim(',').Trim();
+        List<string> front = [];
         for (int i = 0; i < Tokens.Count; i++)
         {
-            if (!used.Contains(i))
+            if (used.Contains(i))
             {
-                restored = restored.Length == 0 ? Tokens[i] : $"{restored.TrimEnd(',', ' ')}, {Tokens[i]}";
+                continue;
             }
+            if (IsRandomPick(i) && restored.Length > 0)
+            {
+                if (InsertAtAnchor(ref restored, Tokens[i], AnchorsFor(i), out string anchor))
+                {
+                    notes?.Add($"T{i + 1} {Tokens[i]} placed after \"{anchor}\"");
+                }
+                else
+                {
+                    front.Add(Tokens[i]);
+                    notes?.Add($"T{i + 1} {Tokens[i]} put at the front");
+                }
+                continue;
+            }
+            restored = restored.Length == 0 ? Tokens[i] : $"{restored.TrimEnd(',', ' ')}, {Tokens[i]}";
+            notes?.Add($"T{i + 1} {Tokens[i]} appended");
+        }
+        if (front.Count > 0)
+        {
+            restored = $"{string.Join(", ", front)}, {restored}";
         }
         if (!string.IsNullOrEmpty(Tail))
         {

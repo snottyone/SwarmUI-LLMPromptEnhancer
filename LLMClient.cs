@@ -77,21 +77,29 @@ public static class LLMClient
     }
 
     /// <summary>Sends one chat request and returns the cleaned answer text.</summary>
-    public static async Task<string> Complete(EnhancerSettings settings, string system, string user, double temperature, CancellationToken cancel)
+    public static Task<string> Complete(EnhancerSettings settings, string system, string user, double temperature, CancellationToken cancel)
+    {
+        return Complete(settings, system, [user], temperature, cancel);
+    }
+
+    /// <summary>Sends one chat request and returns the cleaned answer text.</summary>
+    /// <param name="turns">The conversation after the instruction: user, assistant, user, ... (always an odd count, ending with a user turn).</param>
+    public static async Task<string> Complete(EnhancerSettings settings, string system, IList<string> turns, double temperature, CancellationToken cancel)
     {
         ProviderSettings ps = settings.Current;
         if (string.IsNullOrWhiteSpace(ps.Model))
         {
             throw new InvalidOperationException($"no model chosen for {EnhancerSettings.ProviderNames.GetValueOrDefault(settings.Provider, settings.Provider)} - set one on the 'LLM Prompt Enhancer' tab");
         }
+        JArray messages = [new JObject() { ["role"] = "system", ["content"] = system }];
+        for (int t = 0; t < turns.Count; t++)
+        {
+            messages.Add(new JObject() { ["role"] = t % 2 == 0 ? "user" : "assistant", ["content"] = turns[t] });
+        }
         JObject payload = new()
         {
             ["model"] = ps.Model,
-            ["messages"] = new JArray()
-            {
-                new JObject() { ["role"] = "system", ["content"] = system },
-                new JObject() { ["role"] = "user", ["content"] = user }
-            },
+            ["messages"] = messages,
             ["temperature"] = temperature,
             ["max_tokens"] = settings.MaxTokens,
             ["stream"] = false

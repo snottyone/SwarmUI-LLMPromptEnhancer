@@ -33,7 +33,10 @@ public class LLMPromptEnhancer : Extension
     public static PermInfo PermSettings;
 
     /// <summary>Enhancements of 'once per Generate' mode, shared by the images of one request.</summary>
-    public static ConcurrentDictionary<string, (long Time, Lazy<Task<string>> Result)> OnceCache = new();
+    public static ConcurrentDictionary<string, (long Time, Lazy<Task<Enhancement>> Result)> OnceCache = new();
+
+    /// <summary>An enhanced prompt, plus a note when the enhancer had to put dropped placeholders back (null if not).</summary>
+    public record Enhancement(string Prompt, string Note);
 
     /// <inheritdoc/>
     public override void OnInit()
@@ -65,29 +68,65 @@ public class LLMPromptEnhancer : Extension
     /// <param name="instruction">Optional extra instruction.</param>
     /// <param name="temperature">Model temperature.</param>
     /// <param name="cancel">Cancellation.</param>
-    public static async Task<string> EnhanceAsync(string prompt, string instruction, double temperature, CancellationToken cancel)
+    public static async Task<Enhancement> EnhanceAsync(string prompt, string instruction, double temperature, CancellationToken cancel)
     {
         EnhancerSettings settings = EnhancerSettings.Get();
         ProtectedPrompt protectedPrompt = ProtectedPrompt.Protect(prompt, settings.WildcardExamples);
         if (!protectedPrompt.HasProse)
         {
-            return prompt;
+            return new(prompt, null);
         }
         string system = settings.SystemPrompt + protectedPrompt.Instructions();
         if (!string.IsNullOrWhiteSpace(instruction))
         {
             system += $"\n\nAdditional instruction: {instruction.Trim()}";
         }
-        string answer = await LLMClient.Complete(settings, system, protectedPrompt.Text.Trim(), temperature, cancel);
-        return protectedPrompt.Restore(answer);
+        string user = protectedPrompt.Text.Trim();
+        string answer = await LLMClient.Complete(settings, system, user, temperature, cancel);
+        List<string> notes = [];
+        // A dropped random pick whose name is in the answer ('Carla' for "Carla is a nude [[T1]]") is put back right there by Restore -
+        // asking the model again moved one to the wrong woman in a test. Only placeholders with no such name make it ask once more.
+        List<int> missing = [.. protectedPrompt.Missing(answer).Where(i => !protectedPrompt.CanAnchor(answer, i))];
+        if (missing.Count > 0)
+        {
+            string names = string.Join(", ", missing.Select(i => $"[[T{i + 1}]]"));
+            string again = $"You left out {names}. Write the same text again with each of them put back exactly once, where it belongs: a person's placeholder right after that person's name or first mention. Change nothing else.";
+            try
+            {
+                string second = await LLMClient.Complete(settings, system, [user, answer, again], temperature, cancel);
+                List<int> stillMissing = protectedPrompt.Missing(second);
+                // Take the second answer only if it really has more of them and didn't shrink to a summary.
+                if (stillMissing.Count < missing.Count && second.Length >= answer.Length * 0.7)
+                {
+                    answer = second;
+                    notes.Add($"model left out {names}, asked again: {(stillMissing.Count == 0 ? "all put back" : $"{missing.Count - stillMissing.Count} of {missing.Count} put back")}");
+                }
+                else
+                {
+                    notes.Add($"model left out {names}, asking again didn't help");
+                }
+            }
+            catch (Exception ex)
+            {
+                notes.Add($"model left out {names}, asking again failed: {ex.Message}");
+            }
+        }
+        string result = protectedPrompt.Restore(answer, notes);
+        return new(result, notes.Count == 0 ? null : string.Join("; ", notes));
     }
 
-    /// <summary>Waits for an enhancement inside generation. On failure either stops the image with a readable message or keeps the prompt, per settings.</summary>
-    public static string WaitForEnhancement(Task<string> task, T2IParamInput input, string fallback)
+    /// <summary>Waits for an enhancement inside generation. On failure either stops the image with a readable message or keeps the prompt, per settings.
+    /// A note about placeholders the enhancer had to put back goes into the image's metadata as 'llm_placeholders_fixed'.</summary>
+    public static string WaitForEnhancement(Task<Enhancement> task, T2IParamInput input, string fallback)
     {
         try
         {
-            return task.GetAwaiter().GetResult();
+            Enhancement result = task.GetAwaiter().GetResult();
+            if (!string.IsNullOrEmpty(result.Note))
+            {
+                input.ExtraMeta["llm_placeholders_fixed"] = result.Note;
+            }
+            return result.Prompt;
         }
         catch (Exception ex)
         {
@@ -115,7 +154,7 @@ public class LLMPromptEnhancer : Extension
             return;
         }
         string instruction = input.Get(EnhanceInstruction, "") ?? "";
-        Task<string> task;
+        Task<Enhancement> task;
         if (input.UserRequestId == 0)
         {
             task = EnhanceAsync(raw, instruction, temperature, CancellationToken.None);
@@ -134,7 +173,7 @@ public class LLMPromptEnhancer : Extension
                 }
             }
             string key = $"{input.SourceSession?.User?.UserID}\n{input.UserRequestId}\n{temperature}\n{instruction}\n{raw}";
-            task = OnceCache.GetOrAdd(key, _ => (now, new Lazy<Task<string>>(() => EnhanceAsync(raw, instruction, temperature, CancellationToken.None)))).Result.Value;
+            task = OnceCache.GetOrAdd(key, _ => (now, new Lazy<Task<Enhancement>>(() => EnhanceAsync(raw, instruction, temperature, CancellationToken.None)))).Result.Value;
         }
         string enhanced = WaitForEnhancement(task, input, raw);
         if (enhanced != raw)
@@ -180,8 +219,13 @@ public class LLMPromptEnhancer : Extension
         }
         try
         {
-            string enhanced = await EnhanceAsync(prompt, instruction, Math.Clamp(temperature, 0, 2), Program.GlobalProgramCancel);
-            return new JObject() { ["success"] = true, ["prompt"] = enhanced };
+            Enhancement enhanced = await EnhanceAsync(prompt, instruction, Math.Clamp(temperature, 0, 2), Program.GlobalProgramCancel);
+            JObject result = new() { ["success"] = true, ["prompt"] = enhanced.Prompt };
+            if (!string.IsNullOrEmpty(enhanced.Note))
+            {
+                result["note"] = enhanced.Note;
+            }
+            return result;
         }
         catch (Exception ex)
         {
