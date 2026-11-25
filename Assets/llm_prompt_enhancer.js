@@ -241,7 +241,17 @@ class LLMPromptEnhancerUI {
             this.clearKeyPending = false;
             this.settings = data.settings;
             this.fillForm();
-            state.textContent = `Saved - using ${this.settings.providers[this.settings.provider].name}.`;
+            let saved = `Saved - using ${this.settings.providers[this.settings.provider].name}.`;
+            state.textContent = saved;
+            // LM Studio: swap the model now (unload the others, load this one) instead of piling up models
+            if (this.settings.provider == 'lmstudio') {
+                state.textContent = `${saved} Switching the model in LM Studio...`;
+                genericRequest('LLMPromptEnhancerSwitchModel', {}, sw => {
+                    state.textContent = sw.message ? `${saved} ${sw.message}.` : saved;
+                }, 0, e => {
+                    state.textContent = `${saved} Model switch failed: ${e}`;
+                });
+            }
         }, 0, e => {
             state.textContent = e;
         });

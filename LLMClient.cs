@@ -76,12 +76,92 @@ public static class LLMClient
         return models;
     }
 
+    /// <summary>The server's address without the OpenAI '/v1' part (LM Studio's and Ollama's own APIs live there).</summary>
+    public static string RootURL(ProviderSettings ps)
+    {
+        return Regex.Replace(ps.URL.TrimEnd('/'), "/v1$", "", RegexOptions.IgnoreCase);
+    }
+
+    /// <summary>Sends one request to the server's own API; returns the JSON answer, or null when it fails.</summary>
+    public static async Task<JObject> NativeRequest(ProviderSettings ps, HttpMethod method, string path, JObject body, int timeoutSeconds)
+    {
+        try
+        {
+            using CancellationTokenSource cts = new(TimeSpan.FromSeconds(timeoutSeconds));
+            using HttpRequestMessage request = new(method, $"{RootURL(ps)}/{path}");
+            if (!string.IsNullOrEmpty(ps.APIKey))
+            {
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ps.APIKey);
+            }
+            if (body is not null)
+            {
+                request.Content = new StringContent(body.ToString(), System.Text.Encoding.UTF8, "application/json");
+            }
+            using HttpResponseMessage response = await Client.SendAsync(request, cts.Token);
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+            return JObject.Parse(await response.Content.ReadAsStringAsync(cts.Token));
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Makes the chosen model the only LLM LM Studio has loaded: unloads every other LLM, then loads the chosen one
+    /// (owner 2026-11-26: 'it should CHANGE the model, not load an additional one'). Embedding models are left alone.
+    /// Returns what was done, or null when the server isn't LM Studio (no /api/v1/models).</summary>
+    public static async Task<string> SwitchLMStudioModel(ProviderSettings ps)
+    {
+        JObject list = await NativeRequest(ps, HttpMethod.Get, "api/v1/models", null, 5);
+        if (list?["models"] is not JArray models || string.IsNullOrWhiteSpace(ps.Model))
+        {
+            return null;
+        }
+        JToken target = models.FirstOrDefault(m => string.Equals(m["key"]?.ToString(), ps.Model, StringComparison.OrdinalIgnoreCase));
+        if (target is null)
+        {
+            return $"LM Studio has no model '{ps.Model}'";
+        }
+        List<string> done = [];
+        foreach (JToken m in models)
+        {
+            if (m == target || m["type"]?.ToString() != "llm" || m["loaded_instances"] is not JArray instances)
+            {
+                continue;
+            }
+            foreach (JToken instance in instances)
+            {
+                string id = instance["id"]?.ToString();
+                if (string.IsNullOrEmpty(id))
+                {
+                    continue;
+                }
+                JObject unloaded = await NativeRequest(ps, HttpMethod.Post, "api/v1/models/unload", new JObject() { ["instance_id"] = id }, 60);
+                done.Add(unloaded is null ? $"could not unload {id}" : $"unloaded {id}");
+            }
+        }
+        if (target["loaded_instances"] is JArray loaded && loaded.Count > 0)
+        {
+            done.Add($"{ps.Model} was already loaded");
+        }
+        else
+        {
+            // LM Studio uses the model's own load settings (context, MTP, reasoning) as set there.
+            JObject result = await NativeRequest(ps, HttpMethod.Post, "api/v1/models/load", new JObject() { ["model"] = target["key"]?.ToString() }, 600);
+            done.Add(result is null ? $"could not load {ps.Model}" : $"loaded {ps.Model} in {result.Value<double?>("load_time_seconds") ?? 0:0} s");
+        }
+        return "LM Studio: " + string.Join(", ", done);
+    }
+
     /// <summary>Size, parameter count, quant and vision per model ID ('13.5 GB · 24B · Q4_K_S', '... · vision'), from the server's own model list:
     /// LM Studio's /api/v1/models or Ollama's /api/tags. Empty when the server has neither (OpenRouter, others) - never throws.</summary>
     public static async Task<Dictionary<string, string>> ModelLabels(ProviderSettings ps)
     {
         Dictionary<string, string> labels = new(StringComparer.OrdinalIgnoreCase);
-        string root = Regex.Replace(ps.URL.TrimEnd('/'), "/v1$", "", RegexOptions.IgnoreCase);
+        string root = RootURL(ps);
         foreach (string path in new[] { "api/v1/models", "api/tags" })
         {
             try

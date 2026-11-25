@@ -61,6 +61,7 @@ public class LLMPromptEnhancer : Extension
         API.RegisterAPICall(LLMPromptEnhancerGetSettings, false, PermEnhance);
         API.RegisterAPICall(LLMPromptEnhancerSaveSettings, true, PermSettings);
         API.RegisterAPICall(LLMPromptEnhancerListModels, false, PermSettings);
+        API.RegisterAPICall(LLMPromptEnhancerSwitchModel, true, PermSettings);
     }
 
     /// <summary>Enhances a prompt: protects its syntax, asks the model, puts the syntax back.</summary>
@@ -233,6 +234,14 @@ public class LLMPromptEnhancer : Extension
             Logs.Warning($"LLM Prompt Enhancer: {message}");
             return new JObject() { ["error"] = $"LLM Prompt Enhancer: {message}" };
         }
+    }
+
+    /// <summary>API route: make the saved model the only loaded LLM (LM Studio only).</summary>
+    [API.APIDescription("With LM Studio: unloads every other LLM and loads the saved model. Other servers: nothing happens.", "\"message\": \"LM Studio: unloaded x, loaded y in 12 s\" (empty for other servers)")]
+    public static async Task<JObject> LLMPromptEnhancerSwitchModel(Session session)
+    {
+        string message = await LLMClient.SwitchLMStudioModel(EnhancerSettings.Get().Current);
+        return new JObject() { ["message"] = message ?? "" };
     }
 
     /// <summary>API route: read the settings (API keys are never returned).</summary>
