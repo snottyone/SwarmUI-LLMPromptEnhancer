@@ -76,6 +76,80 @@ public static class LLMClient
         return models;
     }
 
+    /// <summary>Size, parameter count, quant and vision per model ID ('13.5 GB · 24B · Q4_K_S', '... · vision'), from the server's own model list:
+    /// LM Studio's /api/v1/models or Ollama's /api/tags. Empty when the server has neither (OpenRouter, others) - never throws.</summary>
+    public static async Task<Dictionary<string, string>> ModelLabels(ProviderSettings ps)
+    {
+        Dictionary<string, string> labels = new(StringComparer.OrdinalIgnoreCase);
+        string root = Regex.Replace(ps.URL.TrimEnd('/'), "/v1$", "", RegexOptions.IgnoreCase);
+        foreach (string path in new[] { "api/v1/models", "api/tags" })
+        {
+            try
+            {
+                using CancellationTokenSource cts = new(TimeSpan.FromSeconds(5));
+                using HttpRequestMessage request = new(HttpMethod.Get, $"{root}/{path}");
+                if (!string.IsNullOrEmpty(ps.APIKey))
+                {
+                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ps.APIKey);
+                }
+                using HttpResponseMessage response = await Client.SendAsync(request, cts.Token);
+                if (!response.IsSuccessStatusCode)
+                {
+                    continue;
+                }
+                JObject json = JObject.Parse(await response.Content.ReadAsStringAsync(cts.Token));
+                if (json["models"] is not JArray list)
+                {
+                    continue;
+                }
+                foreach (JToken m in list)
+                {
+                    // LM Studio: key, size_bytes, params_string, quantization.name - Ollama: name, size, details.parameter_size / quantization_level
+                    string id = (m["key"] ?? m["name"] ?? m["model"])?.ToString();
+                    if (string.IsNullOrWhiteSpace(id))
+                    {
+                        continue;
+                    }
+                    long bytes = (long?)(m["size_bytes"] ?? m["size"]) ?? 0;
+                    JToken quantToken = m["quantization"];
+                    string quant = (quantToken is JObject qo ? qo["name"]?.ToString() : quantToken?.ToString()) ?? m["details"]?["quantization_level"]?.ToString();
+                    string parameters = (m["params_string"] ?? m["details"]?["parameter_size"])?.ToString();
+                    List<string> parts = [];
+                    if (bytes > 0)
+                    {
+                        parts.Add($"{bytes / 1e9:0.0} GB");
+                    }
+                    if (!string.IsNullOrWhiteSpace(parameters))
+                    {
+                        parts.Add(parameters);
+                    }
+                    if (!string.IsNullOrWhiteSpace(quant))
+                    {
+                        parts.Add(quant);
+                    }
+                    // LM Studio: capabilities.vision (Ollama's list doesn't say)
+                    if (m["capabilities"] is JObject caps && caps["vision"]?.Type == JTokenType.Boolean && (bool)caps["vision"])
+                    {
+                        parts.Add("vision");
+                    }
+                    if (parts.Count > 0)
+                    {
+                        labels[id] = string.Join(" · ", parts);
+                    }
+                }
+                if (labels.Count > 0)
+                {
+                    return labels;
+                }
+            }
+            catch (Exception)
+            {
+                // Not this kind of server; the plain names are shown.
+            }
+        }
+        return labels;
+    }
+
     /// <summary>Sends one chat request and returns the cleaned answer text.</summary>
     public static Task<string> Complete(EnhancerSettings settings, string system, string user, double temperature, CancellationToken cancel)
     {

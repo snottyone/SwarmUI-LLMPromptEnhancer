@@ -199,7 +199,9 @@ class LLMPromptEnhancerUI {
             for (let model of data.models) {
                 let option = document.createElement('option');
                 option.value = model;
-                option.textContent = model;
+                // size / parameters / quant, when the server tells them (LM Studio, Ollama)
+                let label = data.labels ? data.labels[model] : null;
+                option.textContent = label ? `${model}  —  ${label}` : model;
                 pick.appendChild(option);
             }
             pick.value = data.models.includes(current) ? current : '';

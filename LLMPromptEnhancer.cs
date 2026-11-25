@@ -311,7 +311,7 @@ public class LLMPromptEnhancer : Extension
     }
 
     /// <summary>API route: list the models a server offers.</summary>
-    [API.APIDescription("Lists the models of an OpenAI-compatible server. Uses the stored API key of the provider when none is given.", "\"models\": [\"id\", ...]")]
+    [API.APIDescription("Lists the models of an OpenAI-compatible server. Uses the stored API key of the provider when none is given.", "\"models\": [\"id\", ...], \"labels\": {\"id\": \"13.5 GB · 24B · Q4_K_S\"} (only the models the server gives sizes for)")]
     public static async Task<JObject> LLMPromptEnhancerListModels(Session session,
         [API.APIParameter("Provider ID: lmstudio, ollama, openrouter, custom.")] string provider,
         [API.APIParameter("Base URL to ask; empty = the stored one.")] string url = "",
@@ -334,7 +334,16 @@ public class LLMPromptEnhancer : Extension
         try
         {
             List<string> models = await LLMClient.ListModels(ps, settings.TimeoutSeconds);
-            return new JObject() { ["models"] = new JArray(models.ToArray()) };
+            Dictionary<string, string> labels = await LLMClient.ModelLabels(ps);
+            JObject labelJson = new();
+            foreach (string model in models)
+            {
+                if (labels.TryGetValue(model, out string label))
+                {
+                    labelJson[model] = label;
+                }
+            }
+            return new JObject() { ["models"] = new JArray(models.ToArray()), ["labels"] = labelJson };
         }
         catch (Exception ex)
         {
